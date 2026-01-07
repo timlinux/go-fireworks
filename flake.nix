@@ -19,7 +19,7 @@
 
             src = ./.;
 
-            vendorHash = null;
+            vendorHash = "sha256-RCUC5rLpBhqFeGsGOaT3OVNZZFeBlql8ujgx4RtfSE8=";
 
             meta = with pkgs.lib; {
               description = "Terminal fireworks show";

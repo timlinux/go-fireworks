@@ -38,14 +38,14 @@ var colors = []tcell.Color{
 	tcell.ColorGreen,
 	tcell.ColorYellow,
 	tcell.ColorBlue,
-	tcell.ColorMagenta,
-	tcell.ColorCyan,
+	tcell.ColorFuchsia,
+	tcell.ColorAqua,
 	tcell.ColorOrange,
 	tcell.ColorPurple,
-	tcell.ColorGold,
-	tcell.ColorLightCoral,
-	tcell.ColorLightGreen,
-	tcell.ColorLightSkyBlue,
+	tcell.ColorLime,
+	tcell.ColorTeal,
+	tcell.ColorOlive,
+	tcell.ColorNavy,
 }
 
 var chars = []rune{'*', '+', '.', '·', '•', '○', '◦', '∘'}
