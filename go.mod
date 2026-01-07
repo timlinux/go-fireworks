@@ -2,10 +2,7 @@ module tim-particles
 
 go 1.21
 
-require (
-	github.com/gdamore/tcell/v2 v2.7.0
-	github.com/s-macke/particle v0.0.0-20180912183213-c4d2b857f108
-)
+require github.com/gdamore/tcell/v2 v2.7.0
 
 require (
 	github.com/gdamore/encoding v1.0.0 // indirect
