@@ -117,9 +117,19 @@ func (fs *FireworkShow) createFirework(audioData AudioData) {
 	}
 	color := colors[colorIndex]
 
-	// Upward velocity to reach target height
-	// Speed influenced by PITCH
-	launchSpeed := -8.0 - audioData.Pitch*10.0
+	// Launch velocity: randomized if no audio, or based on audio activity levels if present
+	var launchSpeed float64
+	if fs.audio.IsEnabled() && (audioData.Energy > 0.05 || audioData.Volume > 0.05) {
+		// Audio is active: use energy and pitch to determine launch speed
+		// Higher energy = faster launch (more activity in the music)
+		baseLaunch := -8.0
+		energyBoost := audioData.Energy * 8.0  // 0-8 additional speed from energy
+		pitchBoost := audioData.Pitch * 4.0    // 0-4 additional speed from pitch
+		launchSpeed = baseLaunch - energyBoost - pitchBoost
+	} else {
+		// No audio or very low activity: randomize launch speed
+		launchSpeed = -6.0 - rand.Float64()*8.0 // Random between -6 and -14
+	}
 
 	fs.fireworks = append(fs.fireworks, Firework{
 		rocketX:    x,
@@ -203,6 +213,9 @@ func (fs *FireworkShow) update(dt float64) {
 		}
 	}
 
+	// Check for particle collisions across all fireworks
+	fs.handleParticleCollisions()
+
 	// Remove inactive fireworks
 	activeFireworks := make([]Firework, 0, len(fs.fireworks))
 	for _, fw := range fs.fireworks {
@@ -211,6 +224,92 @@ func (fs *FireworkShow) update(dt float64) {
 		}
 	}
 	fs.fireworks = activeFireworks
+}
+
+// handleParticleCollisions detects and resolves collisions between particles
+func (fs *FireworkShow) handleParticleCollisions() {
+	collisionRadius := 1.5 // Particles collide if within this distance
+	restitution := 0.8     // Bounciness of collision (0=sticky, 1=perfectly elastic)
+
+	// Collect all active particles with their firework indices
+	type ParticleRef struct {
+		fwIndex int
+		pIndex  int
+		p       *Particle
+	}
+	allParticles := make([]ParticleRef, 0, 100)
+
+	for fwIdx := range fs.fireworks {
+		if !fs.fireworks[fwIdx].active || fs.fireworks[fwIdx].launching {
+			continue
+		}
+		for pIdx := range fs.fireworks[fwIdx].particles {
+			p := &fs.fireworks[fwIdx].particles[pIdx]
+			if p.life > 0 {
+				allParticles = append(allParticles, ParticleRef{fwIdx, pIdx, p})
+			}
+		}
+	}
+
+	// Check all pairs for collisions
+	for i := 0; i < len(allParticles); i++ {
+		for j := i + 1; j < len(allParticles); j++ {
+			p1 := allParticles[i].p
+			p2 := allParticles[j].p
+
+			// Calculate distance between particles
+			dx := p2.x - p1.x
+			dy := p2.y - p1.y
+			distSq := dx*dx + dy*dy
+			dist := math.Sqrt(distSq)
+
+			// Check if particles are colliding
+			if dist < collisionRadius && dist > 0.01 { // Avoid division by zero
+				// Normalize direction vector
+				nx := dx / dist
+				ny := dy / dist
+
+				// Calculate relative velocity
+				dvx := p2.vx - p1.vx
+				dvy := p2.vy - p1.vy
+				dvn := dvx*nx + dvy*ny
+
+				// Only resolve if particles are moving towards each other
+				if dvn < 0 {
+					// Apply elastic collision response
+					// For simplicity, assume equal mass particles
+					impulse := -(1 + restitution) * dvn / 2
+
+					// Update velocities (repel particles)
+					p1.vx -= impulse * nx
+					p1.vy -= impulse * ny
+					p2.vx += impulse * nx
+					p2.vy += impulse * ny
+
+					// Separate particles to prevent overlap
+					overlap := collisionRadius - dist
+					separationX := nx * overlap * 0.5
+					separationY := ny * overlap * 0.5
+					p1.x -= separationX
+					p1.y -= separationY
+					p2.x += separationX
+					p2.y += separationY
+
+					// Mini-explosion effect: create visual feedback
+					// Brighten the particles briefly by resetting life slightly
+					p1.life = math.Min(p1.life+0.1, 1.0)
+					p2.life = math.Min(p2.life+0.1, 1.0)
+
+					// Add some random perturbation for more chaotic effect
+					perturbStrength := 0.5
+					p1.vx += (rand.Float64()*2 - 1) * perturbStrength
+					p1.vy += (rand.Float64()*2 - 1) * perturbStrength
+					p2.vx += (rand.Float64()*2 - 1) * perturbStrength
+					p2.vy += (rand.Float64()*2 - 1) * perturbStrength
+				}
+			}
+		}
+	}
 }
 
 func (fs *FireworkShow) explodeRocket(index int) {
@@ -231,19 +330,32 @@ func (fs *FireworkShow) explodeRocket(index int) {
 
 	particles := make([]Particle, numParticles)
 
-	// Speed influenced by PITCH
-	baseSpeed := 0.5 + fw.audioData.Pitch*6.0
+	// Explosion radial speed - particles burst outward
+	// Use the rocket's upward velocity magnitude as the explosion force
+	rocketSpeed := math.Sqrt(fw.rocketVX*fw.rocketVX + fw.rocketVY*fw.rocketVY)
+	// Ensure minimum explosion force even if rocket was slow
+	explosionSpeed := math.Max(rocketSpeed*0.8, 3.0)
+
+	// Add some variation based on audio pitch
+	explosionSpeed += fw.audioData.Pitch * 3.0
 
 	for i := 0; i < numParticles; i++ {
-		// Random angle and speed
+		// Random angle in all directions (full circle)
 		angle := rand.Float64() * 2 * math.Pi
-		speed := baseSpeed + rand.Float64()*1.5
+		// Random speed variation for more natural explosion
+		speed := explosionSpeed * (0.5 + rand.Float64()*0.8)
 
+		// Calculate radial velocity components
+		radialVX := math.Cos(angle) * speed
+		radialVY := math.Sin(angle) * speed
+
+		// INHERIT rocket's velocity and ADD radial explosion velocity
+		// This makes particles arc away while maintaining the rocket's momentum
 		particles[i] = Particle{
 			x:     fw.rocketX,
 			y:     fw.rocketY,
-			vx:    math.Cos(angle) * speed,
-			vy:    math.Sin(angle) * speed,
+			vx:    fw.rocketVX + radialVX,
+			vy:    fw.rocketVY + radialVY,
 			life:  1.0,
 			color: fw.color,
 			char:  chars[rand.Intn(len(chars))],
@@ -289,7 +401,10 @@ func (fs *FireworkShow) render() {
 		bassBar := createBar("BASS", audioData.Bass, tcell.ColorRed)
 		fs.drawText(2, statusY+4, bassBar, tcell.ColorRed)
 	} else {
-		fs.drawText(2, 1, "Audio: Disabled (press D for details)", tcell.ColorRed)
+		// Center the audio disabled message below the title
+		msg := "Audio: Disabled (press D for details)"
+		msgX := (fs.width - len(msg)) / 2
+		fs.drawText(msgX, 1, msg, tcell.ColorRed)
 	}
 
 	// Draw all fireworks
