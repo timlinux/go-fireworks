@@ -46,6 +46,7 @@ type FireworkShow struct {
 	audio        *AudioAnalyzer
 	lastBassPeak float64
 	debugMode    bool
+	showAudioViz bool
 }
 
 var colors = []tcell.Color{
@@ -90,12 +91,13 @@ func NewFireworkShow() (*FireworkShow, error) {
 	audio.Start()
 
 	return &FireworkShow{
-		screen:    screen,
-		fireworks: make([]Firework, 0),
-		width:     width,
-		height:    height,
-		running:   true,
-		audio:     audio,
+		screen:       screen,
+		fireworks:    make([]Firework, 0),
+		width:        width,
+		height:       height,
+		running:      true,
+		audio:        audio,
+		showAudioViz: true,
 	}, nil
 }
 
@@ -365,46 +367,140 @@ func (fs *FireworkShow) explodeRocket(index int) {
 	fw.particles = particles
 }
 
+// drawAudioTable draws a bordered table with audio visualization
+func (fs *FireworkShow) drawAudioTable() {
+	audioData := fs.audio.GetData()
+
+	// Table configuration
+	labelWidth := 16
+	barWidth := 22
+	tableWidth := labelWidth + barWidth + 3 // +3 for borders and separator
+	startX := (fs.width - tableWidth) / 2
+	startY := 2 // One line of whitespace after title (title is at y=0)
+
+	// Box drawing characters
+	topLeft := '┌'
+	topRight := '┐'
+	bottomLeft := '└'
+	bottomRight := '┘'
+	horizontal := '─'
+	vertical := '│'
+	cross := '┼'
+	tLeft := '├'
+	tRight := '┤'
+
+	borderStyle := tcell.StyleDefault.Foreground(tcell.ColorWhite).Background(tcell.ColorBlack)
+
+	// Table data: label, value, color
+	rows := []struct {
+		label string
+		value float64
+		color tcell.Color
+	}{
+		{"VOLUME:	COLOR  ", audioData.Volume, tcell.ColorYellow},
+		{"PITCH : SPEED  ", audioData.Pitch, tcell.ColorAqua},
+		{"AVG   : SIZE   ", audioData.RollingAverage, tcell.ColorFuchsia},
+		{"ENERGY: DENSITY", audioData.Energy, tcell.ColorGreen},
+		{"BASS  :        ", audioData.Bass, tcell.ColorRed},
+	}
+
+	// Draw top border
+	fs.screen.SetContent(startX, startY, topLeft, nil, borderStyle)
+	for i := 0; i < labelWidth; i++ {
+		fs.screen.SetContent(startX+1+i, startY, horizontal, nil, borderStyle)
+	}
+	fs.screen.SetContent(startX+1+labelWidth, startY, cross, nil, borderStyle)
+	for i := 0; i < barWidth; i++ {
+		fs.screen.SetContent(startX+2+labelWidth+i, startY, horizontal, nil, borderStyle)
+	}
+	fs.screen.SetContent(startX+tableWidth-1, startY, topRight, nil, borderStyle)
+
+	// Draw rows
+	currentY := startY + 1
+	for idx, row := range rows {
+		// Draw left border
+		fs.screen.SetContent(startX, currentY, vertical, nil, borderStyle)
+
+		// Draw label (left-padded)
+		labelStyle := tcell.StyleDefault.Foreground(row.color).Background(tcell.ColorBlack)
+		for i := 0; i < labelWidth; i++ {
+			if i < len(row.label) {
+				fs.screen.SetContent(startX+1+i, currentY, rune(row.label[i]), nil, labelStyle)
+			} else {
+				fs.screen.SetContent(startX+1+i, currentY, ' ', nil, borderStyle)
+			}
+		}
+
+		// Draw separator
+		fs.screen.SetContent(startX+1+labelWidth, currentY, vertical, nil, borderStyle)
+
+		// Draw bar
+		barStyle := tcell.StyleDefault.Foreground(row.color).Background(tcell.ColorBlack)
+		filled := int(row.value * float64(barWidth))
+		if filled > barWidth {
+			filled = barWidth
+		}
+		for i := 0; i < barWidth; i++ {
+			var ch rune
+			if i < filled {
+				ch = '█'
+			} else {
+				ch = '░'
+			}
+			fs.screen.SetContent(startX+2+labelWidth+i, currentY, ch, nil, barStyle)
+		}
+
+		// Draw right border
+		fs.screen.SetContent(startX+tableWidth-1, currentY, vertical, nil, borderStyle)
+
+		currentY++
+
+		// Draw separator line between rows (except after last row)
+		if idx < len(rows)-1 {
+			fs.screen.SetContent(startX, currentY, tLeft, nil, borderStyle)
+			for i := 0; i < labelWidth; i++ {
+				fs.screen.SetContent(startX+1+i, currentY, horizontal, nil, borderStyle)
+			}
+			fs.screen.SetContent(startX+1+labelWidth, currentY, cross, nil, borderStyle)
+			for i := 0; i < barWidth; i++ {
+				fs.screen.SetContent(startX+2+labelWidth+i, currentY, horizontal, nil, borderStyle)
+			}
+			fs.screen.SetContent(startX+tableWidth-1, currentY, tRight, nil, borderStyle)
+			currentY++
+		}
+	}
+
+	// Draw bottom border
+	fs.screen.SetContent(startX, currentY, bottomLeft, nil, borderStyle)
+	for i := 0; i < labelWidth; i++ {
+		fs.screen.SetContent(startX+1+i, currentY, horizontal, nil, borderStyle)
+	}
+	fs.screen.SetContent(startX+1+labelWidth, currentY, cross, nil, borderStyle)
+	for i := 0; i < barWidth; i++ {
+		fs.screen.SetContent(startX+2+labelWidth+i, currentY, horizontal, nil, borderStyle)
+	}
+	fs.screen.SetContent(startX+tableWidth-1, currentY, bottomRight, nil, borderStyle)
+}
+
 func (fs *FireworkShow) render() {
 	fs.screen.Clear()
 
 	// Draw title
-	title := "✨ FIREWORKS SHOW ✨ (Press ESC/Q to exit, D for debug)"
+	title := "✨ FIREWORKS SHOW ✨ (ESC/Q: exit, D: debug, V: audio viz)"
 	style := tcell.StyleDefault.Foreground(tcell.ColorWhite).Background(tcell.ColorBlack)
 	startX := (fs.width - len(title)) / 2
 	for i, ch := range title {
 		fs.screen.SetContent(startX+i, 0, ch, nil, style)
 	}
 
-	// Draw audio status
-	if fs.audio.IsEnabled() {
-		audioData := fs.audio.GetData()
-		statusY := 1
-
-		// Volume indicator (controls COLOR)
-		volBar := createBar("VOL→COLOR", audioData.Volume, tcell.ColorYellow)
-		fs.drawText(2, statusY, volBar, tcell.ColorYellow)
-
-		// Pitch indicator (controls SPEED)
-		pitchBar := createBar("PITCH→SPEED", audioData.Pitch, tcell.ColorAqua)
-		fs.drawText(2, statusY+1, pitchBar, tcell.ColorAqua)
-
-		// Rolling average indicator (controls SIZE)
-		avgBar := createBar("AVG→SIZE", audioData.RollingAverage, tcell.ColorFuchsia)
-		fs.drawText(2, statusY+2, avgBar, tcell.ColorFuchsia)
-
-		// Energy indicator (controls DENSITY)
-		energyBar := createBar("ENERGY→DENSITY", audioData.Energy, tcell.ColorGreen)
-		fs.drawText(2, statusY+3, energyBar, tcell.ColorGreen)
-
-		// Bass indicator (for triggering)
-		bassBar := createBar("BASS", audioData.Bass, tcell.ColorRed)
-		fs.drawText(2, statusY+4, bassBar, tcell.ColorRed)
-	} else {
-		// Center the audio disabled message below the title
+	// Draw audio visualization table if enabled
+	if fs.showAudioViz && fs.audio.IsEnabled() {
+		fs.drawAudioTable()
+	} else if !fs.audio.IsEnabled() {
+		// Center the audio disabled message below the title with whitespace
 		msg := "Audio: Disabled (press D for details)"
 		msgX := (fs.width - len(msg)) / 2
-		fs.drawText(msgX, 1, msg, tcell.ColorRed)
+		fs.drawText(msgX, 2, msg, tcell.ColorRed)
 	}
 
 	// Draw all fireworks
@@ -629,6 +725,9 @@ func (fs *FireworkShow) handleInput() {
 			}
 			if ev.Rune() == 'd' || ev.Rune() == 'D' {
 				fs.debugMode = !fs.debugMode
+			}
+			if ev.Rune() == 'v' || ev.Rune() == 'V' {
+				fs.showAudioViz = !fs.showAudioViz
 			}
 		case *tcell.EventResize:
 			fs.width, fs.height = fs.screen.Size()
