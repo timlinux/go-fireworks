@@ -21,8 +21,17 @@
 
             vendorHash = "sha256-RCUC5rLpBhqFeGsGOaT3OVNZZFeBlql8ujgx4RtfSE8=";
 
+            nativeBuildInputs = with pkgs; [ pkg-config makeWrapper ];
+            buildInputs = with pkgs; [ pulseaudio ];
+
+            # Ensure pacat is available at runtime via PATH
+            postInstall = ''
+              wrapProgram $out/bin/tim-particles \
+                --prefix PATH : ${pkgs.lib.makeBinPath [ pkgs.pulseaudio ]}
+            '';
+
             meta = with pkgs.lib; {
-              description = "Terminal fireworks show";
+              description = "Audio-reactive terminal fireworks show";
               homepage = "https://github.com/timlinux/tim-particles";
               license = licenses.mit;
               maintainers = [ ];
@@ -41,11 +50,13 @@
             gopls
             gotools
             go-tools
+            pulseaudio
           ];
 
           shellHook = ''
             echo "Go development environment loaded"
-            echo "Run 'go run main.go' to start the fireworks show"
+            echo "Audio-reactive fireworks - requires PulseAudio/PipeWire"
+            echo "Run 'go run *.go' to start the fireworks show"
             echo "Or use 'nix build' and 'nix run' to build and run with Nix"
           '';
         };

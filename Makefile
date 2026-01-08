@@ -17,7 +17,7 @@ help:
 
 # Build the binary
 build:
-	go build -o tim-particles main.go
+	go build -o tim-particles .
 
 # Run the fireworks show
 run: build
