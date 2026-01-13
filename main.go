@@ -59,6 +59,11 @@ type FireworkShow struct {
 	lastBassPeak float64
 	debugMode    bool
 	showAudioViz bool
+	// Explosion type counters
+	explosionCountRadial      int
+	explosionCountDirectional int
+	explosionCountSideways    int
+	explosionCountSpiral      int
 }
 
 var colors = []tcell.Color{
@@ -519,12 +524,16 @@ func (fs *FireworkShow) explodeRocket(index int) {
 	switch fw.explosionType {
 	case ExplosionRadial:
 		particles = fs.createRadialExplosion(numParticles, explosionSpeed, fw)
+		fs.explosionCountRadial++
 	case ExplosionDirectional:
 		particles = fs.createDirectionalExplosion(numParticles, explosionSpeed, fw)
+		fs.explosionCountDirectional++
 	case ExplosionSideways:
 		particles = fs.createSidewaysExplosion(numParticles, explosionSpeed, fw)
+		fs.explosionCountSideways++
 	case ExplosionSpiral:
 		particles = fs.createSpiralExplosion(numParticles, explosionSpeed, fw)
+		fs.explosionCountSpiral++
 	}
 
 	fw.particles = particles
@@ -1006,6 +1015,22 @@ func (fs *FireworkShow) renderDebugInfo() {
 	fs.drawText(startX, y, "  Exploded:  "+formatInt(exploded), tcell.ColorWhite)
 	y++
 	fs.drawText(startX, y, "  Particles: "+formatInt(totalParticles), tcell.ColorWhite)
+
+	// Explosion type statistics
+	y += 2
+	totalExplosions := fs.explosionCountRadial + fs.explosionCountDirectional +
+	                   fs.explosionCountSideways + fs.explosionCountSpiral
+	fs.drawText(startX, y, "EXPLOSION TYPES:", tcell.ColorFuchsia)
+	y++
+	fs.drawText(startX, y, "  Total:       "+formatInt(totalExplosions), tcell.ColorWhite)
+	y++
+	fs.drawText(startX, y, "  Radial:      "+formatInt(fs.explosionCountRadial), tcell.ColorWhite)
+	y++
+	fs.drawText(startX, y, "  Directional: "+formatInt(fs.explosionCountDirectional), tcell.ColorWhite)
+	y++
+	fs.drawText(startX, y, "  Sideways:    "+formatInt(fs.explosionCountSideways), tcell.ColorWhite)
+	y++
+	fs.drawText(startX, y, "  Spiral:      "+formatInt(fs.explosionCountSpiral), tcell.ColorWhite)
 
 	// Effects mapping
 	y += 2
