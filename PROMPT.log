@@ -1,0 +1,2 @@
+2026-01-14: i want to make this available as a go library as well as this standalone application. there should be clear documentation explaining how to integrate it into an existing go application
+2026-01-14: what about a high level package that integrates these togehther and lets you drop in the visualisation into an existing go console app
