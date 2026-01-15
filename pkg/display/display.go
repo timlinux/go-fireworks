@@ -149,6 +149,7 @@ func (d *Display) Start() {
 		for d.running {
 			<-ticker.C
 			d.Update(0) // Auto-calculate dt
+			d.screen.Clear() // Clear screen before rendering to prevent particle trails
 			d.Render()
 			d.screen.Show()
 		}
