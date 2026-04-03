@@ -6,8 +6,14 @@
     flake-utils.url = "github:numtide/flake-utils";
   };
 
-  outputs = { self, nixpkgs, flake-utils }:
-    flake-utils.lib.eachDefaultSystem (system:
+  outputs =
+    {
+      self,
+      nixpkgs,
+      flake-utils,
+    }:
+    flake-utils.lib.eachDefaultSystem (
+      system:
       let
         pkgs = nixpkgs.legacyPackages.${system};
       in
@@ -21,7 +27,10 @@
 
             vendorHash = "sha256-RCUC5rLpBhqFeGsGOaT3OVNZZFeBlql8ujgx4RtfSE8=";
 
-            nativeBuildInputs = with pkgs; [ pkg-config makeWrapper ];
+            nativeBuildInputs = with pkgs; [
+              pkg-config
+              makeWrapper
+            ];
             buildInputs = with pkgs; [ pulseaudio ];
 
             # Ensure pacat is available at runtime via PATH
@@ -51,6 +60,8 @@
             gotools
             go-tools
             pulseaudio
+            asciinema-agg
+            asciinema
           ];
 
           shellHook = ''

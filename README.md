@@ -2,7 +2,9 @@
 
 An audio-reactive terminal fireworks show written in Go using tcell for terminal rendering and using go-particle and real-time audio analysis.
 
-![tim particle screenshot](screenshot.png)
+![Go Fireworks Demo](demo.gif)
+
+![Screenshot](screenshot.png)
 
 
 ## Features
