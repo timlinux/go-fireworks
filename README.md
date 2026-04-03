@@ -128,12 +128,146 @@ The application auto-detects your audio system and works with:
 
 If no audio system is detected, the fireworks will still display with automatic random timing.
 
+## Using as a Library
+
+Go Fireworks can be integrated into your own applications. The packages are designed to be modular and reusable.
+
+### Installation
+
+```bash
+go get github.com/timlinux/go-fireworks
+```
+
+### Packages
+
+| Package | Description |
+|---------|-------------|
+| `go-fireworks/pkg/particles` | Particle physics system with collision detection |
+| `go-fireworks/pkg/fireworks` | Fireworks show management and audio-reactive spawning |
+| `go-fireworks/pkg/audio` | Real-time audio capture and FFT analysis |
+
+### Example: Basic Fireworks Show
+
+```go
+package main
+
+import (
+    "time"
+
+    "github.com/timlinux/go-fireworks/pkg/audio"
+    "github.com/timlinux/go-fireworks/pkg/fireworks"
+)
+
+func main() {
+    // Create a fireworks show for an 80x24 terminal
+    show := fireworks.NewShow(80, 24)
+
+    // Optional: customize configuration
+    config := fireworks.DefaultConfig()
+    config.Gravity = 3.0           // Heavier particles
+    config.MaxParticles = 50       // More particles per explosion
+    show.Config = config
+
+    // Start audio analysis (optional - works without audio too)
+    analyzer := audio.NewAnalyzer()
+    analyzer.Start()
+    defer analyzer.Stop()
+
+    // Main loop
+    lastUpdate := time.Now()
+    for {
+        now := time.Now()
+        dt := now.Sub(lastUpdate).Seconds()
+        lastUpdate = now
+
+        // Get audio data (or use empty audio.Data{} if no audio)
+        audioData := analyzer.GetData()
+
+        // Spawn fireworks based on audio or randomly
+        if shouldSpawn, count := show.ShouldSpawn(audioData, analyzer.IsEnabled()); shouldSpawn {
+            for i := 0; i < count; i++ {
+                show.CreateFirework(audioData)
+            }
+        }
+
+        // Update physics
+        show.Update(dt)
+
+        // Render particles (integrate with your renderer)
+        for _, rocket := range show.GetLaunchingRockets() {
+            // Draw rocket at (rocket.RocketX, rocket.RocketY)
+            _ = rocket
+        }
+        for _, particle := range show.GetAllParticles() {
+            // Draw particle at (particle.X, particle.Y) with particle.Color
+            _ = particle
+        }
+
+        time.Sleep(50 * time.Millisecond)
+    }
+}
+```
+
+### Example: Standalone Particle System
+
+```go
+package main
+
+import (
+    "github.com/timlinux/go-fireworks/pkg/particles"
+)
+
+func main() {
+    // Create a particle system
+    ps := particles.NewParticleSystem(80, 24)
+
+    // Customize physics (optional)
+    ps.Config.Gravity = 5.0
+    ps.Config.Decay = 0.99
+
+    // Create an explosion
+    explosion := particles.CreateExplosion(40, 12, particles.ExplosionConfig{
+        NumParticles: 30,
+        Speed:        15.0,
+        Type:         particles.ExplosionRadial,
+        Color:        0xFF0000, // Red
+        Char:         '⠁',
+    })
+    ps.AddParticles(explosion)
+
+    // Update loop
+    dt := 0.05 // 50ms timestep
+    for ps.ActiveCount() > 0 {
+        ps.Update(dt)
+
+        // Render each particle
+        for _, p := range ps.Particles {
+            if p.Life > 0 {
+                // Draw at (p.X, p.Y) with color p.Color
+                _ = p
+            }
+        }
+    }
+}
+```
+
+### Explosion Types
+
+The library supports multiple explosion patterns:
+
+- `ExplosionRadial` - Classic circular burst
+- `ExplosionDirectional` - Cone-shaped in a specific direction
+- `ExplosionSideways` - Horizontal spread
+- `ExplosionSpiral` - Rotating spiral pattern
+
 ## Development
 
 The project consists of:
 
-- `main.go`: Fireworks rendering and physics engine
-- `audio.go`: Audio capture and FFT analysis
+- `main.go`: Fireworks rendering and tcell integration
+- `pkg/audio/`: Audio capture and FFT analysis
+- `pkg/fireworks/`: Fireworks show management
+- `pkg/particles/`: Particle physics engine
 - `flake.nix`: Nix build configuration
 - `Makefile`: Convenience build targets
 
