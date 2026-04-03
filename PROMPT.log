@@ -1,2 +1,10 @@
 2026-01-14: i want to make this available as a go library as well as this standalone application. there should be clear documentation explaining how to integrate it into an existing go application
 2026-01-14: what about a high level package that integrates these togehther and lets you drop in the visualisation into an existing go console app
+[2026-04-03T11:11:39+01:00] User reported: firework colour is not changing
+
+Root cause found: particles.Color was defined as int32 but tcell.Color is uint64. 
+The conversion truncated the color values (e.g., tcell.ColorRed=0x100000009 became 0x09),
+causing all fireworks to render with incorrect/same colors.
+
+Fix: Changed particles.Color from int32 to int64 in pkg/particles/particles.go
+

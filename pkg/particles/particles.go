@@ -8,7 +8,8 @@ import (
 )
 
 // Color represents a terminal color value (compatible with tcell.Color)
-type Color int32
+// Must be int64 to hold full tcell.Color values which are uint64
+type Color int64
 
 // Particle represents a single particle with position, velocity, and lifecycle
 type Particle struct {
