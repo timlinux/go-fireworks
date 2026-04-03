@@ -22,9 +22,9 @@ import (
 
 	"github.com/gdamore/tcell/v2"
 
-	"tim-particles/pkg/audio"
-	"tim-particles/pkg/fireworks"
-	"tim-particles/pkg/particles"
+	"go-fireworks/pkg/audio"
+	"go-fireworks/pkg/fireworks"
+	"go-fireworks/pkg/particles"
 )
 
 // Display provides a complete audio-reactive fireworks visualization

@@ -14,7 +14,7 @@
       {
         packages = {
           default = pkgs.buildGoModule {
-            pname = "tim-particles";
+            pname = "go-fireworks";
             version = "0.1.0";
 
             src = ./.;
@@ -26,13 +26,13 @@
 
             # Ensure pacat is available at runtime via PATH
             postInstall = ''
-              wrapProgram $out/bin/tim-particles \
+              wrapProgram $out/bin/go-fireworks \
                 --prefix PATH : ${pkgs.lib.makeBinPath [ pkgs.pulseaudio ]}
             '';
 
             meta = with pkgs.lib; {
               description = "Audio-reactive terminal fireworks show";
-              homepage = "https://github.com/timlinux/tim-particles";
+              homepage = "https://github.com/timlinux/go-fireworks";
               license = licenses.mit;
               maintainers = [ ];
             };
@@ -41,7 +41,7 @@
 
         apps.default = {
           type = "app";
-          program = "${self.packages.${system}.default}/bin/tim-particles";
+          program = "${self.packages.${system}.default}/bin/go-fireworks";
         };
 
         devShells.default = pkgs.mkShell {

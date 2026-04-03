@@ -7,8 +7,8 @@ import (
 	"math"
 	"math/rand"
 
-	"tim-particles/pkg/audio"
-	"tim-particles/pkg/particles"
+	"go-fireworks/pkg/audio"
+	"go-fireworks/pkg/particles"
 )
 
 // Firework represents a single firework with launch and explosion phases

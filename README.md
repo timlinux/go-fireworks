@@ -1,4 +1,4 @@
-# Tim Particles
+# Go Fireworks
 
 An audio-reactive terminal fireworks show written in Go using tcell for terminal rendering and using go-particle and real-time audio analysis.
 
@@ -44,7 +44,7 @@ nix run
 
 # Or build first
 nix build
-./result/bin/tim-particles
+./result/bin/go-fireworks
 
 # Development shell
 nix develop
@@ -60,8 +60,8 @@ go mod download
 go run *.go
 
 # Build
-go build -o tim-particles
-./tim-particles
+go build -o go-fireworks
+./go-fireworks
 ```
 
 ### Using Make

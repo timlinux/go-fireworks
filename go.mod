@@ -1,4 +1,4 @@
-module tim-particles
+module go-fireworks
 
 go 1.21
 

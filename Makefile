@@ -17,15 +17,15 @@ help:
 
 # Build the binary
 build:
-	go build -o tim-particles .
+	go build -o go-fireworks .
 
 # Run the fireworks show
 run: build
-	./tim-particles
+	./go-fireworks
 
 # Clean build artifacts
 clean:
-	rm -f tim-particles
+	rm -f go-fireworks
 	go clean
 	rm -rf result result-*
 

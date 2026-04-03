@@ -1,20 +1,20 @@
-# Tim Particles Library
+# Go Fireworks Library
 
 This project provides reusable Go packages for creating audio-reactive particle effects. You can use it as a standalone application or integrate the packages into your own Go projects.
 
 ## Installation
 
 ```bash
-go get github.com/timlinux/tim-particles/pkg/display    # High-level API (recommended)
-go get github.com/timlinux/tim-particles/pkg/particles  # Low-level particle physics
-go get github.com/timlinux/tim-particles/pkg/audio      # Audio analysis
-go get github.com/timlinux/tim-particles/pkg/fireworks  # Fireworks logic
+go get github.com/timlinux/go-fireworks/pkg/display    # High-level API (recommended)
+go get github.com/timlinux/go-fireworks/pkg/particles  # Low-level particle physics
+go get github.com/timlinux/go-fireworks/pkg/audio      # Audio analysis
+go get github.com/timlinux/go-fireworks/pkg/fireworks  # Fireworks logic
 ```
 
 Or add to your `go.mod`:
 
 ```go
-require tim-particles v0.0.0
+require go-fireworks v0.0.0
 ```
 
 ## Quick Start (Easiest)
@@ -22,7 +22,7 @@ require tim-particles v0.0.0
 Drop audio-reactive fireworks into any tcell application with just 3 lines:
 
 ```go
-import "tim-particles/pkg/display"
+import "go-fireworks/pkg/display"
 
 // In your app:
 fw, _ := display.New(screen)
@@ -85,7 +85,7 @@ import (
     "time"
 
     "github.com/gdamore/tcell/v2"
-    "tim-particles/pkg/display"
+    "go-fireworks/pkg/display"
 )
 
 func main() {
@@ -115,7 +115,7 @@ package main
 
 import (
     "github.com/gdamore/tcell/v2"
-    "tim-particles/pkg/display"
+    "go-fireworks/pkg/display"
 )
 
 func main() {
@@ -158,7 +158,7 @@ import (
     "time"
 
     "github.com/gdamore/tcell/v2"
-    "tim-particles/pkg/display"
+    "go-fireworks/pkg/display"
 )
 
 func main() {
@@ -209,7 +209,7 @@ package main
 
 import (
     "github.com/gdamore/tcell/v2"
-    "tim-particles/pkg/display"
+    "go-fireworks/pkg/display"
 )
 
 func main() {
@@ -249,7 +249,7 @@ package main
 
 import (
     "time"
-    "tim-particles/pkg/particles"
+    "go-fireworks/pkg/particles"
 )
 
 func main() {
@@ -304,7 +304,7 @@ package main
 import (
     "fmt"
     "time"
-    "tim-particles/pkg/audio"
+    "go-fireworks/pkg/audio"
 )
 
 func main() {
@@ -354,9 +354,9 @@ package main
 
 import (
     "time"
-    "tim-particles/pkg/audio"
-    "tim-particles/pkg/fireworks"
-    "tim-particles/pkg/particles"
+    "go-fireworks/pkg/audio"
+    "go-fireworks/pkg/fireworks"
+    "go-fireworks/pkg/particles"
 )
 
 func main() {
@@ -441,7 +441,7 @@ package main
 import (
     "math"
     "math/rand"
-    "tim-particles/pkg/particles"
+    "go-fireworks/pkg/particles"
 )
 
 func main() {
@@ -502,7 +502,7 @@ Fine-tune the physics simulation:
 ```go
 package main
 
-import "tim-particles/pkg/particles"
+import "go-fireworks/pkg/particles"
 
 func main() {
     // Create custom physics config
@@ -530,9 +530,9 @@ package main
 
 import (
     "github.com/gdamore/tcell/v2"
-    "tim-particles/pkg/audio"
-    "tim-particles/pkg/fireworks"
-    "tim-particles/pkg/particles"
+    "go-fireworks/pkg/audio"
+    "go-fireworks/pkg/fireworks"
+    "go-fireworks/pkg/particles"
 )
 
 func main() {
