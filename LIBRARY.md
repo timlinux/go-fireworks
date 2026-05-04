@@ -53,6 +53,9 @@ The core particle simulation package providing:
 - **Explosion generators** - Create radial, directional, sideways, and spiral explosion patterns
 - **Collision detection** - Elastic collisions between particles
 - **Cluster scattering** - Automatic re-explosion of tightly grouped particles
+- **Sub-cell renderer** - Composites particles into terminal cells using either:
+  - **Braille mode (2x4)** - Each terminal cell represents a 2×4 grid of dots using Unicode braille characters (U+2800-U+28FF), giving effective resolution of `width×2` by `height×4`
+  - **Quarter Block mode (2x2)** - Each terminal cell represents a 2×2 grid using Unicode block characters (▘▝▖▗▀▄▌▐█ etc.), giving effective resolution of `width×2` by `height×2`
 
 ### `pkg/audio` - Real-time Audio Analysis
 
@@ -612,11 +615,45 @@ The `audio.Data` struct provides these features:
 | `BeatConfidence` | 0-1 | Beat detection confidence | Effect intensity |
 | `EstimatedBPM` | 60-200 | Tempo estimate | Animation timing |
 
+## Render Mode
+
+The particle renderer supports two sub-cell character modes that can be toggled at runtime:
+
+### Braille (2x4) - Default
+
+Uses Unicode braille characters where each terminal cell contains an 8-dot (2 columns × 4 rows) grid. This gives the highest resolution but requires a font with braille character support.
+
+```go
+config := display.DefaultConfig()
+config.RenderMode = particles.RenderBraille
+fw, _ := display.NewWithConfig(screen, config)
+```
+
+### Quarter Block (2x2)
+
+Uses Unicode quarter block characters where each terminal cell contains a 4-quadrant (2 columns × 2 rows) grid. This has wider font support and gives bolder, chunkier particles.
+
+```go
+config := display.DefaultConfig()
+config.RenderMode = particles.RenderQuarterBlock
+fw, _ := display.NewWithConfig(screen, config)
+```
+
+### Switching at Runtime
+
+```go
+// Toggle between modes
+fw.SetRenderMode(particles.RenderQuarterBlock)
+fw.SetRenderMode(particles.RenderBraille)
+```
+
+In the standalone app, press **R** to toggle between modes.
+
 ## Requirements
 
 - **Audio**: PulseAudio or PipeWire with PulseAudio compatibility
 - **Go**: 1.21 or later
-- **For terminal display**: A terminal supporting Unicode braille characters
+- **For terminal display**: A terminal supporting Unicode braille characters and/or block characters
 
 ## License
 

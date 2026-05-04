@@ -44,29 +44,59 @@ func DefaultPhysicsConfig() PhysicsConfig {
 
 // ParticleSystem manages a collection of particles with physics simulation
 type ParticleSystem struct {
-	Particles []Particle
-	Config    PhysicsConfig
-	Width     int // Bounds width
-	Height    int // Bounds height
+	Particles  []Particle
+	Config     PhysicsConfig
+	Width      int        // Bounds width (in sub-cell coordinates)
+	Height     int        // Bounds height (in sub-cell coordinates)
+	RenderMode RenderMode // Rendering mode for this system
 }
 
-// NewParticleSystem creates a new particle system with default config
+// NewParticleSystem creates a new particle system with default config.
+// Width and height are in sub-cell coordinates for the given render mode.
 func NewParticleSystem(width, height int) *ParticleSystem {
 	return &ParticleSystem{
-		Particles: make([]Particle, 0),
-		Config:    DefaultPhysicsConfig(),
-		Width:     width,
-		Height:    height,
+		Particles:  make([]Particle, 0),
+		Config:     DefaultPhysicsConfig(),
+		Width:      width,
+		Height:     height,
+		RenderMode: RenderBraille,
 	}
 }
 
 // NewParticleSystemWithConfig creates a particle system with custom physics
 func NewParticleSystemWithConfig(width, height int, config PhysicsConfig) *ParticleSystem {
 	return &ParticleSystem{
-		Particles: make([]Particle, 0),
-		Config:    config,
-		Width:     width,
-		Height:    height,
+		Particles:  make([]Particle, 0),
+		Config:     config,
+		Width:      width,
+		Height:     height,
+		RenderMode: RenderBraille,
+	}
+}
+
+// NewParticleSystemWithMode creates a particle system with a specific render mode.
+// Width and height are in terminal cell coordinates; they are automatically
+// scaled to sub-cell coordinates based on the render mode.
+func NewParticleSystemWithMode(termWidth, termHeight int, mode RenderMode) *ParticleSystem {
+	w, h := TermToSubCell(termWidth, termHeight, mode)
+	return &ParticleSystem{
+		Particles:  make([]Particle, 0),
+		Config:     DefaultPhysicsConfig(),
+		Width:      w,
+		Height:     h,
+		RenderMode: mode,
+	}
+}
+
+// TermToSubCell converts terminal cell dimensions to sub-cell dimensions
+func TermToSubCell(termWidth, termHeight int, mode RenderMode) (int, int) {
+	switch mode {
+	case RenderBraille:
+		return termWidth * 2, termHeight * 4
+	case RenderQuarterBlock:
+		return termWidth * 2, termHeight * 2
+	default:
+		return termWidth * 2, termHeight * 4
 	}
 }
 
@@ -281,8 +311,13 @@ func (ps *ParticleSystem) Clear() {
 	ps.Particles = ps.Particles[:0]
 }
 
-// SetBounds updates the simulation bounds
+// SetBounds updates the simulation bounds (in sub-cell coordinates)
 func (ps *ParticleSystem) SetBounds(width, height int) {
 	ps.Width = width
 	ps.Height = height
+}
+
+// SetBoundsFromTerminal updates bounds from terminal cell dimensions
+func (ps *ParticleSystem) SetBoundsFromTerminal(termWidth, termHeight int) {
+	ps.Width, ps.Height = TermToSubCell(termWidth, termHeight, ps.RenderMode)
 }

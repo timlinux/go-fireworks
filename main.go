@@ -24,6 +24,7 @@ type FireworkShow struct {
 	lastBassPeak float64
 	debugMode    bool
 	showAudioViz bool
+	renderMode   particles.RenderMode
 }
 
 var colors = []tcell.Color{
@@ -51,14 +52,6 @@ var colors = []tcell.Color{
 	tcell.ColorCrimson,
 }
 
-var chars = []rune{
-	'⠁', '⠂', '⠄', '⠈', '⠐', '⠠', // sparse patterns
-	'⠃', '⠅', '⠉', '⠑', '⠡', '⠢', // light patterns
-	'⠆', '⠊', '⠒', '⠔', '⠤', '⠨', // medium patterns
-	'⠇', '⠋', '⠓', '⠕', '⠥', '⠩', // medium-dense patterns
-	'⠿', '⡿', '⣿', '⢿', '⣾', '⣷', // dense patterns
-	'⣯', '⣟', '⣻', '⣽', '⣺', '⣳', // varied dense patterns
-}
 
 func NewFireworkShow() (*FireworkShow, error) {
 	screen, err := tcell.NewScreen()
@@ -93,6 +86,7 @@ func NewFireworkShow() (*FireworkShow, error) {
 		running:      true,
 		audio:        audioAnalyzer,
 		showAudioViz: false,
+		renderMode:   particles.RenderBraille,
 	}, nil
 }
 
@@ -214,8 +208,12 @@ func (fs *FireworkShow) drawAudioTable() {
 func (fs *FireworkShow) render() {
 	fs.screen.Clear()
 
-	// Draw title
-	title := "✨ FIREWORKS SHOW ✨ (ESC/Q: exit, D: debug, V: audio viz)"
+	// Draw title with render mode indicator
+	modeStr := "B"
+	if fs.renderMode == particles.RenderQuarterBlock {
+		modeStr = "Q"
+	}
+	title := fmt.Sprintf("✨ FIREWORKS SHOW ✨ (ESC/Q: exit, D: debug, V: audio viz, R: mode[%s])", modeStr)
 	style := tcell.StyleDefault.Foreground(tcell.ColorWhite).Background(tcell.ColorBlack)
 	startX := (fs.width - len(title)) / 2
 	for i, ch := range title {
@@ -225,10 +223,8 @@ func (fs *FireworkShow) render() {
 	// Draw music note indicator when audio syncing
 	if fs.audio.IsEnabled() {
 		audioData := fs.audio.GetData()
-		// Show music note if there's any significant audio activity
 		if audioData.Volume > 0.05 || audioData.Energy > 0.05 {
 			noteStyle := tcell.StyleDefault.Foreground(tcell.ColorGreen).Background(tcell.ColorBlack)
-			// Place music note at the end of the title
 			noteX := startX + len(title) + 2
 			fs.screen.SetContent(noteX, 0, '♪', nil, noteStyle)
 		}
@@ -238,41 +234,51 @@ func (fs *FireworkShow) render() {
 	if fs.showAudioViz && fs.audio.IsEnabled() {
 		fs.drawAudioTable()
 	} else if !fs.audio.IsEnabled() {
-		// Center the audio disabled message below the title with whitespace
 		msg := "Audio: Disabled (press D for details)"
 		msgX := (fs.width - len(msg)) / 2
 		fs.drawText(msgX, 2, msg, tcell.ColorRed)
 	}
 
-	// Draw launching rockets
-	for _, fw := range fs.show.GetLaunchingRockets() {
-		x := int(fw.RocketX)
-		y := int(fw.RocketY)
+	// Create renderer for current mode
+	renderer := fs.show.NewRenderer()
 
-		if x >= 0 && x < fs.width && y >= 6 && y < fs.height {
+	// Draw launching rockets (convert sub-cell coords to terminal cells)
+	for _, fw := range fs.show.GetLaunchingRockets() {
+		cellX := int(fw.RocketX) / 2
+		var cellY int
+		if fs.renderMode == particles.RenderBraille {
+			cellY = int(fw.RocketY) / 4
+		} else {
+			cellY = int(fw.RocketY) / 2
+		}
+
+		if cellX >= 0 && cellX < fs.width && cellY >= 6 && cellY < fs.height {
 			style := tcell.StyleDefault.Foreground(tcell.Color(fw.Color)).Background(tcell.ColorBlack)
-			fs.screen.SetContent(x, y, '●', nil, style)
+			fs.screen.SetContent(cellX, cellY, '●', nil, style)
 		}
 	}
 
-	// Draw all particles
-	for _, p := range fs.show.GetAllParticles() {
-		x := int(p.X)
-		y := int(p.Y)
+	// Render particles using sub-cell compositor
+	allParticles := fs.show.GetAllParticles()
+	cells := renderer.RenderParticles(allParticles)
+
+	for key, cell := range cells {
+		x := key[0]
+		y := key[1]
 
 		if x < 0 || x >= fs.width || y < 6 || y >= fs.height {
 			continue
 		}
 
-		style := tcell.StyleDefault.Foreground(tcell.Color(p.Color)).Background(tcell.ColorBlack)
+		style := tcell.StyleDefault.Foreground(tcell.Color(cell.Color)).Background(tcell.ColorBlack)
 
-		if p.Life < 0.2 {
+		if cell.Life < 0.2 {
 			style = tcell.StyleDefault.Foreground(tcell.ColorGray).Background(tcell.ColorBlack)
-		} else if p.Life < 0.5 {
-			style = tcell.StyleDefault.Foreground(tcell.Color(p.Color)).Background(tcell.ColorBlack).Dim(true)
+		} else if cell.Life < 0.5 {
+			style = tcell.StyleDefault.Foreground(tcell.Color(cell.Color)).Background(tcell.ColorBlack).Dim(true)
 		}
 
-		fs.screen.SetContent(x, y, p.Char, nil, style)
+		fs.screen.SetContent(x, y, cell.Char, nil, style)
 	}
 
 	// Draw debug info
@@ -448,6 +454,14 @@ func (fs *FireworkShow) handleInput() {
 			}
 			if ev.Rune() == 'v' || ev.Rune() == 'V' {
 				fs.showAudioViz = !fs.showAudioViz
+			}
+			if ev.Rune() == 'r' || ev.Rune() == 'R' {
+				if fs.renderMode == particles.RenderBraille {
+					fs.renderMode = particles.RenderQuarterBlock
+				} else {
+					fs.renderMode = particles.RenderBraille
+				}
+				fs.show.SetRenderMode(fs.renderMode)
 			}
 		case *tcell.EventResize:
 			fs.width, fs.height = fs.screen.Size()

@@ -79,11 +79,12 @@ func DefaultConfig() Config {
 
 // Show manages the entire fireworks display
 type Show struct {
-	Fireworks []Firework
-	Width     int
-	Height    int
-	Config    Config
-	Colors    []particles.Color
+	Fireworks  []Firework
+	Width      int // Terminal width in cells
+	Height     int // Terminal height in cells
+	Config     Config
+	Colors     []particles.Color
+	RenderMode particles.RenderMode
 
 	// Statistics
 	ExplosionCountRadial      int
@@ -102,12 +103,40 @@ func NewShow(width, height int) *Show {
 // NewShowWithConfig creates a new fireworks show with custom configuration
 func NewShowWithConfig(width, height int, config Config) *Show {
 	return &Show{
-		Fireworks: make([]Firework, 0),
-		Width:     width,
-		Height:    height,
-		Config:    config,
-		Colors:    DefaultColors(),
+		Fireworks:  make([]Firework, 0),
+		Width:      width,
+		Height:     height,
+		Config:     config,
+		Colors:     DefaultColors(),
+		RenderMode: particles.RenderBraille,
 	}
+}
+
+// NewShowWithMode creates a show with a specific render mode.
+// Width and height are terminal cell dimensions.
+func NewShowWithMode(width, height int, mode particles.RenderMode) *Show {
+	s := NewShowWithConfig(width, height, DefaultConfig())
+	s.RenderMode = mode
+	return s
+}
+
+// SetRenderMode changes the rendering mode for the show.
+// Clears all existing fireworks since they use the old coordinate space.
+func (s *Show) SetRenderMode(mode particles.RenderMode) {
+	s.RenderMode = mode
+	s.Fireworks = s.Fireworks[:0]
+}
+
+// SubCellWidth returns the width in sub-cell coordinates
+func (s *Show) SubCellWidth() int {
+	w, _ := particles.TermToSubCell(s.Width, s.Height, s.RenderMode)
+	return w
+}
+
+// SubCellHeight returns the height in sub-cell coordinates
+func (s *Show) SubCellHeight() int {
+	_, h := particles.TermToSubCell(s.Width, s.Height, s.RenderMode)
+	return h
 }
 
 // DefaultColors returns the default color palette
@@ -139,13 +168,17 @@ func DefaultColors() []particles.Color {
 	}
 }
 
-// CreateFirework spawns a new firework based on audio data
+// CreateFirework spawns a new firework based on audio data.
+// Rocket coordinates are in sub-cell space for the current render mode.
 func (s *Show) CreateFirework(audioData audio.Data) {
-	startY := float64(s.Height - 1)
+	subW := s.SubCellWidth()
+	subH := s.SubCellHeight()
 
-	// Random target height (20% to 80% of screen)
-	minHeight := s.Height / 5
-	maxHeight := s.Height * 4 / 5
+	startY := float64(subH - 1)
+
+	// Random target height (20% to 80% of screen) in sub-cell coords
+	minHeight := subH / 5
+	maxHeight := subH * 4 / 5
 	targetY := float64(rand.Intn(maxHeight-minHeight) + minHeight)
 
 	// Color selection based on spectral centroid
@@ -161,21 +194,21 @@ func (s *Show) CreateFirework(audioData audio.Data) {
 	}
 	s.lastFireworkColor = color
 
-	// Launch speed based on audio
+	// Launch speed based on audio (scaled for sub-cell space)
 	launchSpeed := s.calculateLaunchSpeed(audioData)
 
 	// Launch angle based on bass
 	launchVX, launchVY := s.calculateLaunchVelocity(audioData, launchSpeed)
 
-	// Starting position based on angle
+	// Starting position based on angle (in sub-cell coords)
 	angleDegrees := math.Atan2(-launchVY, launchVX) * 180 / math.Pi
 	var startX float64
 	if angleDegrees < 90 {
-		startX = float64(s.Width*3/4 + rand.Intn(s.Width/4))
+		startX = float64(subW*3/4 + rand.Intn(subW/4))
 	} else if angleDegrees > 90 {
-		startX = float64(rand.Intn(s.Width / 4))
+		startX = float64(rand.Intn(subW / 4))
 	} else {
-		startX = float64(s.Width/4 + rand.Intn(s.Width/2))
+		startX = float64(subW/4 + rand.Intn(subW/2))
 	}
 
 	// Random explosion type
@@ -213,16 +246,21 @@ func (s *Show) selectColor(audioData audio.Data) int {
 }
 
 func (s *Show) calculateLaunchSpeed(audioData audio.Data) float64 {
+	var speed float64
 	if audioData.Energy > 0.05 || audioData.Volume > 0.05 {
 		volumeBoost := audioData.Volume * s.Config.VolumeWeight
 		beatBoost := audioData.BeatStrength * s.Config.BeatWeight
-		speed := s.Config.BaseLaunchSpeed + volumeBoost + beatBoost
+		speed = s.Config.BaseLaunchSpeed + volumeBoost + beatBoost
 		if speed > s.Config.MaxLaunchSpeed {
 			speed = s.Config.MaxLaunchSpeed
 		}
-		return speed
+	} else {
+		speed = s.Config.BaseLaunchSpeed + rand.Float64()*(s.Config.MaxLaunchSpeed-s.Config.BaseLaunchSpeed)/2
 	}
-	return s.Config.BaseLaunchSpeed + rand.Float64()*(s.Config.MaxLaunchSpeed-s.Config.BaseLaunchSpeed)/2
+	// Scale speed for sub-cell coordinate space
+	_, subH := particles.TermToSubCell(s.Width, s.Height, s.RenderMode)
+	scale := float64(subH) / float64(s.Height)
+	return speed * scale
 }
 
 func (s *Show) calculateLaunchVelocity(audioData audio.Data, speed float64) (vx, vy float64) {
@@ -243,6 +281,9 @@ func (s *Show) calculateLaunchVelocity(audioData audio.Data, speed float64) (vx,
 
 // Update advances the simulation by dt seconds
 func (s *Show) Update(dt float64) {
+	// Scale gravity for sub-cell coordinate space
+	gravityScale := float64(s.SubCellHeight()) / float64(s.Height)
+
 	for i := range s.Fireworks {
 		if !s.Fireworks[i].Active {
 			continue
@@ -251,10 +292,10 @@ func (s *Show) Update(dt float64) {
 		fw := &s.Fireworks[i]
 
 		if fw.Launching {
-			// Update rocket position
+			// Update rocket position (in sub-cell coords)
 			fw.RocketX += fw.RocketVX * dt
 			fw.RocketY += fw.RocketVY * dt
-			fw.RocketVY += s.Config.Gravity * dt
+			fw.RocketVY += s.Config.Gravity * gravityScale * dt
 
 			// Check for explosion
 			if fw.RocketY <= fw.TargetY || fw.RocketVY >= 0 {
@@ -304,7 +345,7 @@ func (s *Show) explodeRocket(index int) {
 	randomMultiplier := 0.7 + rand.Float64()*0.6
 	explosionSpeed := (baseExplosion + fluxBoost) * randomMultiplier
 
-	// Create explosion
+	// Create explosion (Char is unused in sub-cell rendering, kept for compatibility)
 	config := particles.ExplosionConfig{
 		NumParticles:    numParticles,
 		Speed:           explosionSpeed,
@@ -319,8 +360,10 @@ func (s *Show) explodeRocket(index int) {
 
 	explosionParticles := particles.CreateExplosion(fw.RocketX, fw.RocketY, config)
 
-	// Create particle system for this firework
-	fw.Particles = particles.NewParticleSystem(s.Width, s.Height)
+	// Create particle system in sub-cell coordinates
+	subW, subH := particles.TermToSubCell(s.Width, s.Height, s.RenderMode)
+	fw.Particles = particles.NewParticleSystem(subW, subH)
+	fw.Particles.RenderMode = s.RenderMode
 	fw.Particles.AddParticles(explosionParticles)
 
 	// Update statistics
@@ -350,10 +393,15 @@ func (s *Show) ActiveParticleCount() int {
 	return count
 }
 
-// SetBounds updates the display bounds
+// SetBounds updates the display bounds (terminal cell dimensions)
 func (s *Show) SetBounds(width, height int) {
 	s.Width = width
 	s.Height = height
+}
+
+// NewRenderer creates a renderer configured for this show
+func (s *Show) NewRenderer() *particles.Renderer {
+	return particles.NewRenderer(s.RenderMode, s.Width, s.Height)
 }
 
 // GetAllParticles returns all active particles for rendering

@@ -67,6 +67,9 @@ type Config struct {
 
 	// Fireworks config (nil = use defaults)
 	FireworksConfig *fireworks.Config
+
+	// RenderMode controls the sub-cell character set (Braille 2x4 or QuarterBlock 2x2)
+	RenderMode particles.RenderMode
 }
 
 // DefaultConfig returns sensible defaults
@@ -107,6 +110,7 @@ func NewWithConfig(screen tcell.Screen, config Config) (*Display, error) {
 	} else {
 		show = fireworks.NewShow(maxX-minX, maxY-minY)
 	}
+	show.SetRenderMode(config.RenderMode)
 
 	// Set colors
 	if config.Colors != nil {
@@ -239,10 +243,20 @@ func (d *Display) renderToRegion(minX, minY, maxX, maxY int) {
 		}
 	}
 
-	// Draw launching rockets
+	// Draw launching rockets (convert from sub-cell to terminal cell coords)
+	renderer := d.show.NewRenderer()
 	for _, fw := range d.show.GetLaunchingRockets() {
-		x := minX + int(fw.RocketX)
-		y := minY + titleOffset + int(fw.RocketY)
+		// Rocket positions are in sub-cell space; convert to terminal cells
+		cellX := int(fw.RocketX) / 2
+		var cellY int
+		if d.config.RenderMode == particles.RenderBraille {
+			cellY = int(fw.RocketY) / 4
+		} else {
+			cellY = int(fw.RocketY) / 2
+		}
+
+		x := minX + cellX
+		y := minY + titleOffset + cellY
 
 		if x >= minX && x < maxX && y >= minY+titleOffset && y < maxY {
 			style := tcell.StyleDefault.Foreground(tcell.Color(fw.Color)).Background(tcell.ColorBlack)
@@ -250,23 +264,26 @@ func (d *Display) renderToRegion(minX, minY, maxX, maxY int) {
 		}
 	}
 
-	// Draw particles
-	for _, p := range d.show.GetAllParticles() {
-		x := minX + int(p.X)
-		y := minY + titleOffset + int(p.Y)
+	// Render particles using sub-cell compositor
+	allParticles := d.show.GetAllParticles()
+	cells := renderer.RenderParticles(allParticles)
+
+	for key, cell := range cells {
+		x := minX + key[0]
+		y := minY + titleOffset + key[1]
 
 		if x < minX || x >= maxX || y < minY+titleOffset || y >= maxY {
 			continue
 		}
 
-		style := tcell.StyleDefault.Foreground(tcell.Color(p.Color)).Background(tcell.ColorBlack)
-		if p.Life < 0.2 {
+		style := tcell.StyleDefault.Foreground(tcell.Color(cell.Color)).Background(tcell.ColorBlack)
+		if cell.Life < 0.2 {
 			style = tcell.StyleDefault.Foreground(tcell.ColorGray).Background(tcell.ColorBlack)
-		} else if p.Life < 0.5 {
+		} else if cell.Life < 0.5 {
 			style = style.Dim(true)
 		}
 
-		d.screen.SetContent(x, y, p.Char, nil, style)
+		d.screen.SetContent(x, y, cell.Char, nil, style)
 	}
 }
 
@@ -290,6 +307,17 @@ func (d *Display) GetAudioData() audio.Data {
 // GetShow returns the underlying fireworks show for advanced control
 func (d *Display) GetShow() *fireworks.Show {
 	return d.show
+}
+
+// SetRenderMode changes the rendering mode (Braille 2x4 or QuarterBlock 2x2)
+func (d *Display) SetRenderMode(mode particles.RenderMode) {
+	d.config.RenderMode = mode
+	d.show.SetRenderMode(mode)
+}
+
+// GetRenderMode returns the current rendering mode
+func (d *Display) GetRenderMode() particles.RenderMode {
+	return d.config.RenderMode
 }
 
 // TriggerFirework manually spawns a firework
