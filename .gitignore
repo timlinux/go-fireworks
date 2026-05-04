@@ -32,3 +32,5 @@ result-*
 # OS
 .DS_Store
 Thumbs.db
+.direnv
+dist
