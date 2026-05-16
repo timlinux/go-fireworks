@@ -43,6 +43,16 @@ type Data struct {
 	EstimatedBPM   float64 // Current estimated tempo
 }
 
+// SourceType determines which audio source to capture from
+type SourceType int
+
+const (
+	// SourceMonitor captures system audio output (for music reactivity)
+	SourceMonitor SourceType = iota
+	// SourceMicrophone captures from the default input device (for speech)
+	SourceMicrophone
+)
+
 // Analyzer captures and analyzes system audio in real-time
 type Analyzer struct {
 	// Basic frequency bands
@@ -86,6 +96,9 @@ type Analyzer struct {
 	beatConfidence float64
 	adaptiveThresh float64
 
+	// Waveform buffer for visualization
+	waveform []float64
+
 	cmd         *exec.Cmd
 	running     bool
 	mu          sync.RWMutex
@@ -94,10 +107,21 @@ type Analyzer struct {
 	pacatPath   string
 	deviceUsed  string
 	sampleCount int
+	sourceType  SourceType
 }
 
-// NewAnalyzer creates a new audio analyzer
+// NewAnalyzer creates a new audio analyzer that captures from system audio monitors
 func NewAnalyzer() *Analyzer {
+	return NewAnalyzerWithSource(SourceMonitor)
+}
+
+// NewMicAnalyzer creates a new audio analyzer that captures from the microphone
+func NewMicAnalyzer() *Analyzer {
+	return NewAnalyzerWithSource(SourceMicrophone)
+}
+
+// NewAnalyzerWithSource creates a new audio analyzer with the specified source type
+func NewAnalyzerWithSource(source SourceType) *Analyzer {
 	return &Analyzer{
 		enabled:         true,
 		volumeHistory:   make([]float64, 0, 50),
@@ -117,6 +141,7 @@ func NewAnalyzer() *Analyzer {
 		isBeat:          false,
 		beatConfidence:  0.0,
 		adaptiveThresh:  0.5,
+		sourceType:      source,
 	}
 }
 
@@ -140,16 +165,26 @@ func (a *Analyzer) Start() error {
 	a.pacatPath = pacatPath
 	a.running = true
 
-	devices := a.detectMonitorDevices(pacatPath)
-
-	if len(devices) == 0 {
-		devices = []string{
-			"@DEFAULT_MONITOR@",
-			"@DEFAULT_SINK@.monitor",
+	var devices []string
+	if a.sourceType == SourceMicrophone {
+		devices = a.detectMicDevices(pacatPath)
+		if len(devices) == 0 {
+			devices = []string{"@DEFAULT_SOURCE@"}
+			a.errorMsg = "Auto-detection failed, trying default source"
+		} else {
+			a.errorMsg = fmt.Sprintf("Found %d mic sources", len(devices))
 		}
-		a.errorMsg = "Auto-detection failed, trying defaults"
 	} else {
-		a.errorMsg = fmt.Sprintf("Found %d monitors", len(devices))
+		devices = a.detectMonitorDevices(pacatPath)
+		if len(devices) == 0 {
+			devices = []string{
+				"@DEFAULT_MONITOR@",
+				"@DEFAULT_SINK@.monitor",
+			}
+			a.errorMsg = "Auto-detection failed, trying defaults"
+		} else {
+			a.errorMsg = fmt.Sprintf("Found %d monitors", len(devices))
+		}
 	}
 
 	var stdout io.ReadCloser
@@ -194,7 +229,7 @@ func (a *Analyzer) Start() error {
 	go func() {
 		const (
 			sampleRate     = 44100
-			bufferSize     = 2048
+			bufferSize     = 1024
 			bytesPerSample = 2
 		)
 
@@ -222,6 +257,39 @@ func (a *Analyzer) Start() error {
 	}()
 
 	return nil
+}
+
+func (a *Analyzer) detectMicDevices(pacatPath string) []string {
+	pactlPath := filepath.Join(filepath.Dir(pacatPath), "pactl")
+
+	cmd := exec.Command(pactlPath, "list", "short", "sources")
+	output, err := cmd.Output()
+	if err != nil {
+		return nil
+	}
+
+	var mics []string
+	lines := bytes.Split(output, []byte("\n"))
+	for _, line := range lines {
+		if len(line) == 0 {
+			continue
+		}
+		// Skip monitor sources - we want actual input devices
+		if bytes.Contains(line, []byte("monitor")) {
+			continue
+		}
+		fields := bytes.Fields(line)
+		if len(fields) >= 2 {
+			deviceName := string(fields[1])
+			if bytes.Contains(line, []byte("RUNNING")) {
+				mics = append([]string{deviceName}, mics...)
+			} else {
+				mics = append(mics, deviceName)
+			}
+		}
+	}
+
+	return mics
 }
 
 func (a *Analyzer) detectMonitorDevices(pacatPath string) []string {
@@ -256,6 +324,20 @@ func (a *Analyzer) analyze(samples []float64, sampleRate int) {
 	if len(samples) == 0 {
 		return
 	}
+
+	// Store waveform for visualization (downsample to ~200 points)
+	waveformSize := 200
+	step := len(samples) / waveformSize
+	if step < 1 {
+		step = 1
+	}
+	wf := make([]float64, 0, waveformSize)
+	for i := 0; i < len(samples) && len(wf) < waveformSize; i += step {
+		wf = append(wf, samples[i])
+	}
+	a.mu.Lock()
+	a.waveform = wf
+	a.mu.Unlock()
 
 	// Calculate RMS
 	rms := 0.0
@@ -376,7 +458,7 @@ func (a *Analyzer) analyze(samples []float64, sampleRate int) {
 	}
 
 	a.frameCount++
-	frameRate := 50.0
+	frameRate := 43.0 // ~44100/1024 frames per second
 	currentTime := float64(a.frameCount) / frameRate
 
 	if a.frameCount%25 == 0 && len(a.energyBuffer) > 100 {
@@ -440,9 +522,9 @@ func (a *Analyzer) analyze(samples []float64, sampleRate int) {
 	energy = math.Min(energy, 1.0)
 
 	a.mu.Lock()
-	alphaFast := 0.6
-	alphaMedium := 0.4
-	alphaSlow := 0.2
+	alphaFast := 0.85
+	alphaMedium := 0.7
+	alphaSlow := 0.4
 
 	a.bass = alphaMedium*bass + (1-alphaMedium)*a.bass
 	a.mid = alphaMedium*mid + (1-alphaMedium)*a.mid
@@ -654,4 +736,16 @@ func (a *Analyzer) GetDebugInfo() (pacatPath, device string) {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 	return a.pacatPath, a.deviceUsed
+}
+
+// GetWaveform returns the most recent waveform samples (normalized -1 to 1)
+func (a *Analyzer) GetWaveform() []float64 {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	if len(a.waveform) == 0 {
+		return nil
+	}
+	result := make([]float64, len(a.waveform))
+	copy(result, a.waveform)
+	return result
 }

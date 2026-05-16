@@ -9,8 +9,18 @@ import (
 	"github.com/gdamore/tcell/v2"
 
 	"go-fireworks/pkg/audio"
+	"go-fireworks/pkg/display"
 	"go-fireworks/pkg/fireworks"
 	"go-fireworks/pkg/particles"
+)
+
+// DisplayMode represents the current display mode
+type DisplayMode int
+
+const (
+	ModeFireworks DisplayMode = iota
+	ModeSpeechOrb
+	ModeWaveform
 )
 
 // FireworkShow manages the terminal-based fireworks display
@@ -21,10 +31,14 @@ type FireworkShow struct {
 	height       int
 	running      bool
 	audio        *audio.Analyzer
+	micAudio     *audio.Analyzer
 	lastBassPeak float64
 	debugMode    bool
 	showAudioViz bool
 	renderMode   particles.RenderMode
+	displayMode  DisplayMode
+	speechOrb    *display.SpeechOrb
+	waveform     *display.Waveform
 }
 
 var colors = []tcell.Color{
@@ -70,6 +84,9 @@ func NewFireworkShow() (*FireworkShow, error) {
 	audioAnalyzer := audio.NewAnalyzer()
 	audioAnalyzer.Start()
 
+	micAnalyzer := audio.NewMicAnalyzer()
+	micAnalyzer.Start()
+
 	// Create fireworks show with tcell-compatible colors
 	show := fireworks.NewShow(width, height)
 	tcellColors := make([]particles.Color, len(colors))
@@ -78,6 +95,12 @@ func NewFireworkShow() (*FireworkShow, error) {
 	}
 	show.Colors = tcellColors
 
+	// Create speech orb display
+	speechOrb := display.NewSpeechOrb(width, height, particles.RenderBraille, tcellColors)
+
+	// Create waveform display
+	waveformDisplay := display.NewWaveform(width, height, particles.RenderBraille, tcellColors)
+
 	return &FireworkShow{
 		screen:       screen,
 		show:         show,
@@ -85,8 +108,12 @@ func NewFireworkShow() (*FireworkShow, error) {
 		height:       height,
 		running:      true,
 		audio:        audioAnalyzer,
+		micAudio:     micAnalyzer,
 		showAudioViz: false,
 		renderMode:   particles.RenderBraille,
+		displayMode:  ModeFireworks,
+		speechOrb:    speechOrb,
+		waveform:     waveformDisplay,
 	}, nil
 }
 
@@ -213,7 +240,14 @@ func (fs *FireworkShow) render() {
 	if fs.renderMode == particles.RenderQuarterBlock {
 		modeStr = "Q"
 	}
-	title := fmt.Sprintf("✨ FIREWORKS SHOW ✨ (ESC/Q: exit, D: debug, V: audio viz, R: mode[%s])", modeStr)
+	displayStr := "FW"
+	switch fs.displayMode {
+	case ModeSpeechOrb:
+		displayStr = "ORB"
+	case ModeWaveform:
+		displayStr = "WAV"
+	}
+	title := fmt.Sprintf("✨ FIREWORKS SHOW ✨ (ESC/Q: exit, D: debug, V: viz, R: mode[%s], M: display[%s])", modeStr, displayStr)
 	style := tcell.StyleDefault.Foreground(tcell.ColorWhite).Background(tcell.ColorBlack)
 	startX := (fs.width - len(title)) / 2
 	for i, ch := range title {
@@ -239,6 +273,24 @@ func (fs *FireworkShow) render() {
 		fs.drawText(msgX, 2, msg, tcell.ColorRed)
 	}
 
+	switch fs.displayMode {
+	case ModeSpeechOrb:
+		fs.renderSpeechOrb()
+	case ModeWaveform:
+		fs.renderWaveform()
+	default:
+		fs.renderFireworks()
+	}
+
+	// Draw debug info
+	if fs.debugMode {
+		fs.renderDebugInfo()
+	}
+
+	fs.screen.Show()
+}
+
+func (fs *FireworkShow) renderFireworks() {
 	// Create renderer for current mode
 	renderer := fs.show.NewRenderer()
 
@@ -280,13 +332,147 @@ func (fs *FireworkShow) render() {
 
 		fs.screen.SetContent(x, y, cell.Char, nil, style)
 	}
+}
 
-	// Draw debug info
-	if fs.debugMode {
-		fs.renderDebugInfo()
+func (fs *FireworkShow) renderSpeechOrb() {
+	micData := fs.micAudio.GetData()
+
+	// Draw microphone orb at center
+	centerX := fs.width / 2
+	centerY := fs.height / 2
+	orbRadius := fs.speechOrb.OrbRadius(micData)
+
+	// Orb color pulses with volume
+	orbColor := tcell.ColorDarkCyan
+	if micData.Volume > 0.3 {
+		orbColor = tcell.ColorAqua
+	}
+	if micData.Volume > 0.6 {
+		orbColor = tcell.ColorWhite
 	}
 
-	fs.screen.Show()
+	// Draw the orb using filled circles
+	for dy := -orbRadius; dy <= orbRadius; dy++ {
+		for dx := -orbRadius * 2; dx <= orbRadius*2; dx++ {
+			// Ellipse formula (terminal chars are ~2:1 aspect ratio)
+			ex := float64(dx) / 2.0
+			ey := float64(dy)
+			dist := ex*ex + ey*ey
+			r := float64(orbRadius)
+			if dist <= r*r {
+				px := centerX + dx
+				py := centerY + dy
+				if px >= 0 && px < fs.width && py >= 1 && py < fs.height {
+					var ch rune
+					var charStyle tcell.Style
+					if dist <= (r-1)*(r-1) {
+						// Inner orb
+						ch = '█'
+						charStyle = tcell.StyleDefault.Foreground(orbColor).Background(tcell.ColorBlack)
+					} else {
+						// Border
+						ch = '░'
+						charStyle = tcell.StyleDefault.Foreground(tcell.ColorDarkCyan).Background(tcell.ColorBlack)
+					}
+					fs.screen.SetContent(px, py, ch, nil, charStyle)
+				}
+			}
+		}
+	}
+
+	// Draw microphone icon in center
+	micStyle := tcell.StyleDefault.Foreground(tcell.ColorWhite).Background(orbColor)
+	fs.screen.SetContent(centerX-1, centerY-1, '┌', nil, micStyle)
+	fs.screen.SetContent(centerX, centerY-1, '─', nil, micStyle)
+	fs.screen.SetContent(centerX+1, centerY-1, '┐', nil, micStyle)
+	fs.screen.SetContent(centerX-1, centerY, '│', nil, micStyle)
+	fs.screen.SetContent(centerX, centerY, '♪', nil, micStyle)
+	fs.screen.SetContent(centerX+1, centerY, '│', nil, micStyle)
+	fs.screen.SetContent(centerX-1, centerY+1, '└', nil, micStyle)
+	fs.screen.SetContent(centerX, centerY+1, '┴', nil, micStyle)
+	fs.screen.SetContent(centerX+1, centerY+1, '┘', nil, micStyle)
+	fs.screen.SetContent(centerX, centerY+2, '│', nil, micStyle)
+
+	// Render particles
+	renderer := particles.NewRenderer(fs.renderMode, fs.width, fs.height)
+	allParticles := fs.speechOrb.GetParticles()
+	cells := renderer.RenderParticles(allParticles)
+
+	for key, cell := range cells {
+		x := key[0]
+		y := key[1]
+
+		if x < 0 || x >= fs.width || y < 1 || y >= fs.height {
+			continue
+		}
+
+		// Don't draw particles over the orb
+		dx := float64(x-centerX) / 2.0
+		dy := float64(y - centerY)
+		dist := dx*dx + dy*dy
+		r := float64(orbRadius)
+		if dist <= r*r {
+			continue
+		}
+
+		style := tcell.StyleDefault.Foreground(tcell.Color(cell.Color)).Background(tcell.ColorBlack)
+
+		if cell.Life < 0.2 {
+			style = tcell.StyleDefault.Foreground(tcell.ColorGray).Background(tcell.ColorBlack)
+		} else if cell.Life < 0.5 {
+			style = tcell.StyleDefault.Foreground(tcell.Color(cell.Color)).Background(tcell.ColorBlack).Dim(true)
+		}
+
+		fs.screen.SetContent(x, y, cell.Char, nil, style)
+	}
+}
+
+func (fs *FireworkShow) renderWaveform() {
+	// Use mic audio if available, otherwise system audio
+	analyzer := fs.audio
+	if fs.micAudio.IsEnabled() {
+		analyzer = fs.micAudio
+	}
+
+	waveformParticles := fs.waveform.RenderWaveform(analyzer)
+	if len(waveformParticles) == 0 {
+		// Draw "no signal" message
+		msg := "Waiting for audio signal..."
+		msgX := (fs.width - len(msg)) / 2
+		fs.drawText(msgX, fs.height/2, msg, tcell.ColorGray)
+		return
+	}
+
+	renderer := particles.NewRenderer(fs.renderMode, fs.width, fs.height)
+	cells := renderer.RenderParticles(waveformParticles)
+
+	for key, cell := range cells {
+		x := key[0]
+		y := key[1]
+
+		if x < 0 || x >= fs.width || y < 2 || y >= fs.height {
+			continue
+		}
+
+		style := tcell.StyleDefault.Foreground(tcell.Color(cell.Color)).Background(tcell.ColorBlack)
+
+		if cell.Life < 0.3 {
+			style = tcell.StyleDefault.Foreground(tcell.Color(cell.Color)).Background(tcell.ColorBlack).Dim(true)
+		}
+
+		fs.screen.SetContent(x, y, cell.Char, nil, style)
+	}
+
+	// Draw center line indicator
+	centerY := fs.height / 2
+	lineStyle := tcell.StyleDefault.Foreground(tcell.ColorDarkGray).Background(tcell.ColorBlack)
+	for x := 0; x < fs.width; x++ {
+		// Only draw where no waveform particle exists
+		key := [2]int{x, centerY}
+		if _, exists := cells[key]; !exists {
+			fs.screen.SetContent(x, centerY, '─', nil, lineStyle)
+		}
+	}
 }
 
 func (fs *FireworkShow) drawText(x, y int, text string, color tcell.Color) {
@@ -462,10 +648,24 @@ func (fs *FireworkShow) handleInput() {
 					fs.renderMode = particles.RenderBraille
 				}
 				fs.show.SetRenderMode(fs.renderMode)
+				fs.speechOrb.SetRenderMode(fs.renderMode)
+				fs.waveform.SetRenderMode(fs.renderMode)
+			}
+			if ev.Rune() == 'm' || ev.Rune() == 'M' {
+				switch fs.displayMode {
+				case ModeFireworks:
+					fs.displayMode = ModeSpeechOrb
+				case ModeSpeechOrb:
+					fs.displayMode = ModeWaveform
+				case ModeWaveform:
+					fs.displayMode = ModeFireworks
+				}
 			}
 		case *tcell.EventResize:
 			fs.width, fs.height = fs.screen.Size()
 			fs.show.SetBounds(fs.width, fs.height)
+			fs.speechOrb.SetBounds(fs.width, fs.height)
+			fs.waveform.SetBounds(fs.width, fs.height)
 			fs.screen.Sync()
 		}
 	}
@@ -474,11 +674,12 @@ func (fs *FireworkShow) handleInput() {
 func (fs *FireworkShow) Run() {
 	defer fs.screen.Fini()
 	defer fs.audio.Stop()
+	defer fs.micAudio.Stop()
 
 	// Handle input in separate goroutine
 	go fs.handleInput()
 
-	ticker := time.NewTicker(50 * time.Millisecond)
+	ticker := time.NewTicker(25 * time.Millisecond)
 	defer ticker.Stop()
 
 	fireworkTimer := time.Now()
@@ -528,6 +729,13 @@ func (fs *FireworkShow) Run() {
 
 			// Update physics
 			fs.show.Update(dt)
+
+			// Update speech orb with mic audio
+			if fs.displayMode == ModeSpeechOrb {
+				micData := fs.micAudio.GetData()
+				hasMic := fs.micAudio.IsEnabled()
+				fs.speechOrb.Update(dt, micData, hasMic)
+			}
 
 			// Render
 			fs.render()

@@ -10,3 +10,4 @@ Fix: Changed particles.Color from int32 to int64 in pkg/particles/particles.go
 
 2026-05-04: Update the particle renderer so that it can either use braille fonts (2x4) or quarter block font (2x2). All the same logic rules should apply so that any client applications that use the particle library (including fireworks here) can either set the rendering to 2x4 or 2x2.
 
+Sat May 16 23:32:37 UTC 2026: Add speech orb mode - particles originate from center with radial sequential directions, center mic orb, emissions driven by system mic speech activity
